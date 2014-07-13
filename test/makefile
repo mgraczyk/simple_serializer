@@ -15,7 +15,7 @@ OBJECTS = $(patsubst %.cpp, %.o, $(wildcard *.cpp)) \
 HEADERS = $(wildcard *.h)
 INCLUDECC = $(addprefix -I,$(INCLUDE))
 
-.PHONY: default disasm all clean self_test serializers
+.PHONY: default disasm all clean self_test serializers debug
 .PRECIOUS: $(TARGET) $(OBJECTS)
 .SUFFIXES:
 
@@ -23,7 +23,7 @@ default: $(TARGET)
 disasm: $(TARGET).s
 all: default
 
-debug: CFLAGS+= -g -ggdb3
+debug: CFLAGS+= -gdwarf-3 -g
 debug: default
 
 %.o: %.c $(HEADERS)
@@ -40,8 +40,6 @@ run: $(TARGET)
 	$(TARGET)
 
 self_test: serializers
-	@$(MAKE) -B serializers
-	@$(MAKE) -B
 	@diff <($(TARGET)) $(TEST_INPUT_DIR)/expected.json
 	@echo PASS
 
