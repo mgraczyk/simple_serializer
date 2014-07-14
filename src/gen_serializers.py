@@ -16,26 +16,44 @@ def get_DIEs_depth_first(die):
     for child in die.iter_children():
         yield from get_DIEs_depth_first(child)
 
-def get_all_structs(cu):
+def get_dies_by_offset(cu):
+    top = cu.get_top_DIE()
+    return { die.offset : die for die in get_DIEs_depth_first(top) }
+
+def get_struct_dies(diesByOffset):
     structDTagStr = "DW_TAG_structure_type"
     structDTag = dwarf.enums.ENUM_DW_TAG[structDTagStr]
 
-    top = cu.get_top_DIE()
-    structs = {
-            die.offset : die for die in get_DIEs_depth_first(top)
-            if die.tag == structDTagStr
-        }
+    structs = dict(p for p in diesByOffset.items()
+            if p[1].tag == structDTagStr )#and p[1].attributes.get("DW_AT_name"))
 
     return structs
 
-def get_serialization_types(structs, CU):
+def get_base_type(diesByOffset, die):
+    typeAttr = die.attributes.get("DW_AT_type")
+    while typeAttr != None:
+        die = diesByOffset[typeAttr.value]
+        typeAttr = die.attributes.get("DW_AT_type")
+    return die
+
+def get_serialization_types(types, CU):
+    diesByOffset = get_dies_by_offset(CU)
+    structs = get_struct_dies(diesByOffset)
+
     # TODO: Implement
-    types = []
-    for struct in structs.values():
+    serializers = []
+    for t in types:
         members = []
         for child in struct.iter_children():
             memberName = child.attributes["DW_AT_name"].value.decode(encoding='UTF-8')
-            memberSer = serializable.Integer("int", 4, True)
+            memberType = get_base_type(diesByOffset, child)
+
+            if memberType.tag != "DW_TAG_base_type":
+                continue
+
+            memberTypeName = memberType.attributes["DW_AT_name"].value.decode(encoding='UTF-8')
+            memberTypeSize = memberType.attributes["DW_AT_byte_size"].value
+            memberSer = serializable.Integer(memberTypeName, memberTypeSize, True)
             members.append(StructMember(memberName, memberSer))
 
         structName = struct.attributes.get("DW_AT_name")
@@ -44,9 +62,9 @@ def get_serialization_types(structs, CU):
         else:
             structName = "object_t"
 
-        types.append(serializable.Aggregate(structName, members))
+        serializers.append(serializable.Aggregate(structName, members))
 
-    return types
+    return serializers
 
 def process_file(filename, outfile):
     with open(filename, 'rb') as f:
@@ -61,8 +79,8 @@ def process_file(filename, outfile):
 
         with open(outfile, 'w') as outFp:
             for CU in dwarfinfo.iter_CUs():
-                structs = get_all_structs(CU)
-                types = get_serialization_types(structs, CU)
+                dies = get_dies_by_offset(CU)
+                types = get_serialization_types(CU)
 
                 emit.emit_serializers(outFp, types)
 
