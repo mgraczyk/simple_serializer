@@ -23,7 +23,7 @@ default: $(TARGET)
 disasm: $(TARGET).s
 all: default
 
-debug: CFLAGS+= -gdwarf-3 -g
+debug: CFLAGS+= -g
 debug: default
 
 %.o: %.c $(HEADERS)
