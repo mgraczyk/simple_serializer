@@ -4,12 +4,12 @@
 
 #ifndef _sERIALIZERS_EMITTED
 
-#define simple_serialize(TYPENAME, PTR) \
-    puts(#TYPENAME)
+#define simple_serialize(TYPENAME, PTR, FP) \
+    fputs(#TYPENAME, FP)
 
 #else
 
-#define simple_serialize(TYPENAME, PTR) \
-    simple_serialize_ ## TYPENAME(PTR)
+#define simple_serialize(TYPENAME, PTR, FP) \
+    simple_serialize_ ## TYPENAME(PTR, FP)
 
 #endif

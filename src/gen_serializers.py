@@ -1,50 +1,70 @@
 #!/usr/bin/python3
 
 import argparse
+from collections import namedtuple
 
 from elftools.elf.elffile import ELFFile
+import elftools.dwarf as dwarf
 
-def process_file(filename):
-    print('Processing file:', filename)
+import emit
+import serializable
+
+StructMember = namedtuple("StructMember", ["name", "serializer"])
+
+def get_DIEs_depth_first(die):
+    yield die
+    for child in die.iter_children():
+        yield from get_DIEs_depth_first(child)
+
+def get_all_structs(cu):
+    structDTagStr = "DW_TAG_structure_type"
+    structDTag = dwarf.enums.ENUM_DW_TAG[structDTagStr]
+
+    top = cu.get_top_DIE()
+    structs = {
+            die.offset : die for die in get_DIEs_depth_first(top)
+            if die.tag == structDTagStr
+        }
+
+    return structs
+
+def get_serialization_types(structs, CU):
+    # TODO: Implement
+    types = []
+    for struct in structs.values():
+        members = []
+        for child in struct.iter_children():
+            memberName = child.attributes["DW_AT_name"].value.decode(encoding='UTF-8')
+            memberSer = serializable.Integer("int", 4, True)
+            members.append(StructMember(memberName, memberSer))
+
+        structName = struct.attributes.get("DW_AT_name")
+        if structName:
+            structName = structName.value.decode(encoding='UTF-8')
+        else:
+            structName = "object_t"
+
+        types.append(serializable.Aggregate(structName, members))
+
+    return types
+
+def process_file(filename, outfile):
     with open(filename, 'rb') as f:
         elffile = ELFFile(f)
 
         if not elffile.has_dwarf_info():
-            print('  file has no DWARF info')
-            return
+            raise IOError("ERROR: {} has no DWARF info".format(filename))
 
         # get_dwarf_info returns a DWARFInfo context object, which is the
         # starting point for all DWARF-based processing in pyelftools.
         dwarfinfo = elffile.get_dwarf_info()
 
-        for CU in dwarfinfo.iter_CUs():
-            # DWARFInfo allows to iterate over the compile units contained in
-            # the .debug_info section. CU is a CompileUnit object, with some
-            # computed attributes (such as its offset in the section) and
-            # a header which conforms to the DWARF standard. The access to
-            # header elements is, as usual, via item-lookup.
-            print('  Found a compile unit at offset %s, length %s' % (
-                CU.cu_offset, CU['unit_length']))
+        with open(outfile, 'w') as outFp:
+            for CU in dwarfinfo.iter_CUs():
+                structs = get_all_structs(CU)
+                types = get_serialization_types(structs, CU)
 
-            # Start with the top DIE, the root for this CU's DIE tree
-            top_DIE = CU.get_top_DIE()
-            print('    Top DIE with tag=%s' % top_DIE.tag)
-
-            # We're interested in the filename...
-            print('    name=%s' % top_DIE.get_full_path())
-
-            # Display DIEs recursively starting with top_DIE
-            die_info_rec(top_DIE)
-
-
-def die_info_rec(die, indent_level='    '):
-    """ A recursive function for showing information about a DIE and its
-        children.
-    """
-    print(indent_level + 'DIE tag={} at {} -> {}\n'.format(die.tag, die.offset, str(die.attributes)))
-    child_indent = indent_level + '  '
-    for child in die.iter_children():
-        die_info_rec(child, child_indent)
+                emit.emit_serializers(outFp, types)
 
 def get_arg_parser():
     argParser = argparse.ArgumentParser(description='Generates serialization functions for data structures inside an elf file.',
@@ -58,7 +78,7 @@ def get_arg_parser():
 
 def main():
     args = get_arg_parser().parse_args()
-    process_file(args.elf_file)
+    process_file(args.elf_file, args.out_file)
 
 if __name__ == "__main__":
     main()
