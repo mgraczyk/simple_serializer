@@ -20,6 +20,9 @@ def get_dies_by_offset(cu):
     top = cu.get_top_DIE()
     return { die.offset : die for die in get_DIEs_depth_first(top) }
 
+def get_dies_by_name(dies):
+    return { die.attributes.get("DW_AT_name") : die for die in dies }
+
 def get_struct_dies(diesByOffset):
     structDTagStr = "DW_TAG_structure_type"
     structDTag = dwarf.enums.ENUM_DW_TAG[structDTagStr]
@@ -36,15 +39,27 @@ def get_base_type(diesByOffset, die):
         typeAttr = die.attributes.get("DW_AT_type")
     return die
 
+def get_aggregate_serializer(diesByOffset, die):
+    pass
+
+def get_base_type_serializer(diesByOffset, die):
+
+def get_serializer(diesByOffset, die):
+    if die.tag == "DW_TAG_structure_type":
+    elif die.tag == "DW_TAG_base_type":
+        return get_base_type_serializer(diesByOffset, die)
+    pass
+
 def get_serialization_types(types, CU):
     diesByOffset = get_dies_by_offset(CU)
+    diesByName = get_dies_by_name(diesByOffset.values())
     structs = get_struct_dies(diesByOffset)
 
     # TODO: Implement
     serializers = []
     for t in types:
         members = []
-        for child in struct.iter_children():
+        for child in diesByName[t].iter_children():
             memberName = child.attributes["DW_AT_name"].value.decode(encoding='UTF-8')
             memberType = get_base_type(diesByOffset, child)
 
@@ -56,12 +71,7 @@ def get_serialization_types(types, CU):
             memberSer = serializable.Integer(memberTypeName, memberTypeSize, True)
             members.append(StructMember(memberName, memberSer))
 
-        structName = struct.attributes.get("DW_AT_name")
-        if structName:
-            structName = structName.value.decode(encoding='UTF-8')
-        else:
-            structName = "object_t"
-
+        structName = t
         serializers.append(serializable.Aggregate(structName, members))
 
     return serializers
@@ -80,7 +90,7 @@ def process_file(filename, outfile):
         with open(outfile, 'w') as outFp:
             for CU in dwarfinfo.iter_CUs():
                 dies = get_dies_by_offset(CU)
-                types = get_serialization_types(CU)
+                types = get_serialization_types(["object_t"], CU)
 
                 emit.emit_serializers(outFp, types)
 
